@@ -1,0 +1,14 @@
+{
+    "db": {
+        "host": "172.18.100.231",
+        "port": "1530",
+        "sid": "devbase",
+        "username": "wadeyuan",
+        "password": "fkeuya"
+    },
+    "paths": [
+        "/tmp/logs1",
+        "/tmp/logs2",
+        "/data/media/files/a2pcdr"
+    ]
+}
