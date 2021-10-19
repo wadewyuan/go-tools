@@ -1,0 +1,24 @@
+{
+    "localpaths": [
+        "/tmp/dir1/",
+        "/tmp/dir2/",
+        "/tmp/dir3/"
+    ],
+    "remotepaths": [
+        "/tmp/dir1/",
+        "/tmp/dir2/",
+        "/tmp/dir3/"
+    ],
+    "remote": {
+        "host": "10.0.0.2",
+        "port": 22,
+        "username": "root",
+        "password": "000000"
+    },
+    "tunnel": {
+        "host": "10.0.0.8",
+        "port": 22,
+        "username": "root",
+        "password": "000000"
+    }
+}
