@@ -35,7 +35,7 @@ func processFile(path string, p string) (filename string, err error) {
 	match := re.FindStringSubmatch(path)
 
 	// Step 2. Concatenate date string to the pattern to narrow down the search range
-	p = "*" + match[1] + p + match[2] + "1800*"
+	p = "*" + match[1] + p + match[2] + "*"
 
 	// Step 3. Open the file to update and read line by line
 	f, e := os.Open(path)
