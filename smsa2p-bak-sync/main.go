@@ -13,6 +13,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/pkg/sftp"
 	SSHTunnel "github.com/wadewyuan/go-tools/ssh"
+	alarm "github.com/wadewyuan/smartom-utils-go"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -56,15 +57,17 @@ func indexOf(element string, data []string) int {
 	return -1 //not found.
 }
 
-func syncFile(path string, tunnel SSHTunnel.SSHTunnel, conf Config) error {
+func syncFile(path string, tunnel *SSHTunnel.SSHTunnel, conf Config) error {
 
 	// Get the index of the file directory in conf.LocalPaths, then get the corresponding remote path to upload file to
 	dir, fname := filepath.Split(path)
-	log.Print(dir)
-	log.Print(fname)
 	remoteDir := conf.RemotePaths[indexOf(dir, conf.LocalPaths)]
-
-	addr := fmt.Sprintf("127.0.0.1:%d", tunnel.Local.Port)
+	var addr string
+	if tunnel == nil {
+		addr = fmt.Sprintf("%s:%d", conf.Remote.Host, conf.Remote.Port)
+	} else {
+		addr = fmt.Sprintf("127.0.0.1:%d", tunnel.Local.Port)
+	}
 	sshConfig := &ssh.ClientConfig{
 		User: conf.Remote.Username,
 		Auth: []ssh.AuthMethod{
@@ -110,7 +113,7 @@ func syncFile(path string, tunnel SSHTunnel.SSHTunnel, conf Config) error {
 
 	// Remove ".writing" prefix when upload complete
 	err = client.Rename(remoteDir+"/.writing"+fname, remoteDir+"/"+fname)
-	log.Println("Uploaded " + fname)
+	log.Println("Synced " + fname)
 	if err != nil {
 		log.Print(err)
 	}
@@ -121,6 +124,7 @@ func syncFile(path string, tunnel SSHTunnel.SSHTunnel, conf Config) error {
 func main() {
 	var c string
 	var conf Config
+	var tunnel *SSHTunnel.SSHTunnel
 
 	// load configuration file
 	flag.StringVar(&c, "c", "./config.json", "Specify the configuration file.")
@@ -136,23 +140,26 @@ func main() {
 		log.Fatal("can't decode config JSON: ", err)
 	}
 
-	// Create SSH Tunnel
-	tunnel := SSHTunnel.NewSSHTunnel(
-		// User and host of tunnel server, it will default to port 22
-		// if not specified.
-		fmt.Sprintf("%s@%s", conf.Tunnel.Username, conf.Tunnel.Host),
-		// Password authentication methods
-		ssh.Password(conf.Tunnel.Password),
-		// The destination host and port of the actual server.
-		fmt.Sprintf("%s:%d", conf.Remote.Host, conf.Remote.Port),
-	)
-	// You can provide a logger for debugging, or remove this line to
-	// make it silent.
-	tunnel.Log = log.New(os.Stdout, "", log.Ldate|log.Lmicroseconds)
-	// Start the server in the background. You will need to wait a
-	// small amount of time for it to bind to the localhost port
-	// before you can start sending connections.
-	go tunnel.Start()
+	if len(conf.Tunnel.Host) > 0 {
+		// Create SSH Tunnel
+		tunnel = SSHTunnel.NewSSHTunnel(
+			// User and host of tunnel server, it will default to port 22
+			// if not specified.
+			fmt.Sprintf("%s@%s", conf.Tunnel.Username, conf.Tunnel.Host),
+			// Password authentication methods
+			ssh.Password(conf.Tunnel.Password),
+			// The destination host and port of the actual server.
+			fmt.Sprintf("%s:%d", conf.Remote.Host, conf.Remote.Port),
+		)
+		// You can provide a logger for debugging, or remove this line to
+		// make it silent.
+		tunnel.Log = log.New(os.Stdout, "", log.Ldate|log.Lmicroseconds)
+		// Start the server in the background. You will need to wait a
+		// small amount of time for it to bind to the localhost port
+		// before you can start sending connections.
+		go tunnel.Start()
+	}
+
 	time.Sleep(100 * time.Millisecond)
 	// NewSSHTunnel will bind to a random port so that you can have
 	// multiple SSH tunnels available. The port is available through:
@@ -188,10 +195,12 @@ func main() {
 			case event := <-watcher.Events:
 				log.Printf("EVENT: %s, OP: %s\n", event.Name, event.Op.String())
 
-				if event.Op == fsnotify.CloseWrite || event.Op == fsnotify.Create {
-					err := syncFile(event.Name, *tunnel, conf)
+				if event.Op == fsnotify.Create {
+					err := syncFile(event.Name, tunnel, conf)
 					if err != nil {
-						log.Printf("Error sync file: %s\n ", event.Name)
+						var msg = fmt.Sprintf("Error sync file: %s\n ", event.Name)
+						log.Print(msg)
+						alarm.SendAlarm("402-3", msg)
 					}
 				}
 				// watch for errors
