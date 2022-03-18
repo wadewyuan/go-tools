@@ -25,6 +25,8 @@ type Endpoint struct {
 }
 
 type Config struct {
+	LocalEvent string
+
 	LocalPaths []string
 
 	RemotePaths []string
@@ -32,6 +34,8 @@ type Config struct {
 	Remote Endpoint
 
 	Tunnel Endpoint
+
+	AlarmCode string
 }
 
 var watcher *fsnotify.Watcher
@@ -62,6 +66,34 @@ func syncFile(path string, tunnel *SSHTunnel.SSHTunnel, conf Config) error {
 	// Get the index of the file directory in conf.LocalPaths, then get the corresponding remote path to upload file to
 	dir, fname := filepath.Split(path)
 	remoteDir := conf.RemotePaths[indexOf(dir, conf.LocalPaths)]
+
+	// Open local file and copy it to /tmp to avoic conflicts
+	srcFile, err := os.Open(path)
+	if err != nil {
+		log.Print(err)
+		return err
+	}
+	var srcBytes int64
+	fi, err := srcFile.Stat()
+	if err != nil {
+		log.Print(err)
+		srcBytes = 0
+		return err
+	}
+	srcBytes = fi.Size()
+	tmpFile, err := os.Create("/tmp/" + fname)
+	if err != nil {
+		log.Print(err)
+		return err
+	}
+	_, err = io.Copy(tmpFile, srcFile)
+	if err != nil {
+		log.Print(err)
+		return err
+	}
+	srcFile.Close()
+	tmpFile.Close()
+
 	var addr string
 	if tunnel == nil {
 		addr = fmt.Sprintf("%s:%d", conf.Remote.Host, conf.Remote.Port)
@@ -91,32 +123,32 @@ func syncFile(path string, tunnel *SSHTunnel.SSHTunnel, conf Config) error {
 	// Close connection
 	defer client.Close()
 
-	// Open local file for reading
-	srcFile, err := os.Open(path)
-	if err != nil {
-		log.Print(err)
-		return err
-	}
-	defer srcFile.Close()
-
 	// Add a ".writing" prefix during the uploading process
 	dstFile, err := client.Create(remoteDir + "/.writing" + fname)
 	if err != nil {
 		log.Print(err)
 		return err
 	}
-	_, err = io.Copy(dstFile, srcFile)
+	// Copy the tmpFile to remote path
+	tmpFile, _ = os.Open("/tmp/" + fname)
+	nBytes, err := io.Copy(dstFile, tmpFile)
 	if err != nil {
 		log.Print(err)
 	}
 	dstFile.Close()
+	tmpFile.Close()
 
+	os.Remove("/tmp/" + fname)
+
+	if nBytes != srcBytes {
+		return fmt.Errorf("file not fully synced. total bytes:%d, synced bytes:%d", srcBytes, nBytes)
+	}
 	// Remove ".writing" prefix when upload complete
 	err = client.Rename(remoteDir+"/.writing"+fname, remoteDir+"/"+fname)
-	log.Println("Synced " + fname)
 	if err != nil {
-		log.Print(err)
+		return err
 	}
+	log.Println("Synced " + fname)
 
 	return err
 }
@@ -195,12 +227,26 @@ func main() {
 			case event := <-watcher.Events:
 				log.Printf("EVENT: %s, OP: %s\n", event.Name, event.Op.String())
 
-				if event.Op == fsnotify.Create {
+				var op = fsnotify.Create
+				if len(conf.LocalEvent) > 0 {
+					switch conf.LocalEvent {
+					case "CLOSEWRITE":
+						op = fsnotify.CloseWrite
+					case "CREATE":
+						op = fsnotify.Create
+					default:
+						op = fsnotify.Create
+					}
+				}
+
+				if event.Op == op {
 					err := syncFile(event.Name, tunnel, conf)
 					if err != nil {
-						var msg = fmt.Sprintf("Error sync file: %s\n ", event.Name)
-						log.Print(msg)
-						alarm.SendAlarm("402-3", msg)
+						var msg = fmt.Sprintf("Error sync file: %s ", event.Name)
+						log.Println(msg, err)
+						if len(conf.AlarmCode) > 0 {
+							alarm.SendAlarm(conf.AlarmCode, msg)
+						}
 					}
 				}
 				// watch for errors
