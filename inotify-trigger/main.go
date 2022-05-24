@@ -53,6 +53,10 @@ func postProcess(path string, conf Config) error {
 			if err := cmd.Start(); err != nil {
 				log.Println("Execute failed when Start:" + err.Error())
 			}
+			go func() {
+				cmd.Wait()
+			}()
+
 		} else if errors.Is(err, os.ErrNotExist) {
 			log.Println(err.Error())
 		} else {

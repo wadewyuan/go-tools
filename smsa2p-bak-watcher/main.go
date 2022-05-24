@@ -125,9 +125,12 @@ func readFile(path string) error {
 
 	for scanner.Scan() {
 		s := strings.Split(scanner.Text(), "|")
+		if len(s) <= 1 {
+			continue
+		}
 		t, err := time.Parse("20060102150405", s[1])
 		if err != nil {
-			return err
+			continue
 		}
 		if tEnd.IsZero() || t.After(tEnd) {
 			tEnd = t

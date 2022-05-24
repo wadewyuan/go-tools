@@ -199,7 +199,10 @@ func readFile(path string) error {
 		}
 	}
 	if !tBegin.IsZero() && !tEnd.IsZero() { // Skip empty files
-		logFileNameAndTimes(gwType, filepath.Base(f.Name()), tBegin, tEnd)
+		err := logFileNameAndTimes(gwType, filepath.Base(f.Name()), tBegin, tEnd)
+		if err != nil {
+			return err
+		}
 	}
 
 	f.Close()
@@ -238,23 +241,24 @@ func scanDir(path string, fi os.FileInfo, err error) error {
 }
 
 // log the file name, begin and end times into table in oracle DB
-func logFileNameAndTimes(gwType int, filename string, tBegin time.Time, tEnd time.Time) {
+func logFileNameAndTimes(gwType int, filename string, tBegin time.Time, tEnd time.Time) error {
 	log.Printf("Gateway Type: %d, File: %s, Max Time: %s, Min Time: %s", gwType, filename, tEnd.Format(time.RFC3339), tBegin.Format(time.RFC3339))
 
 	conn, err := sql.Open("oracle", "oracle://"+conf.Db.Username+":"+conf.Db.Password+"@"+conf.Db.Host+":"+conf.Db.Port+"/"+conf.Db.Sid)
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
 	defer conn.Close()
 
 	stmt, err := conn.Prepare("INSERT INTO SMS_CDR_LOADING_LOG_EXT VALUES(sms_cdr_loading_log_seq.nextval, :1, :2, :3, :4, SYSDATE, null)")
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
 	defer stmt.Close()
 
 	_, err = stmt.Exec(gwType, filename, tBegin, tEnd)
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
+	return nil
 }

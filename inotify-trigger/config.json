@@ -6,5 +6,5 @@
         "/tmp/dir3/"
     ],
     "pattern": "cdr_a2pgw0[0-9][a-z]_\\d{14}_\\d{3}",
-    "postcommand": "moveToSplitter.sh $FILE_NAME"
+    "postcommand": "echo $FILE_NAME"
 }
